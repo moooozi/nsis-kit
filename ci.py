@@ -34,8 +34,13 @@ def main():
                 "--target", TARGET, "--all-targets", "--features", feature,
                 "--", "-D", "warnings")
         run(sys.executable, "-W", "error", "-m", "py_compile",
-            "ci.py", "build.py", "build_support.py", "test_toolkit.py")
+            "ci.py", "build.py", "build_support.py", "build_preview.py",
+            "desktop_helpers.py", "test_preview.py", "test_maintenance.py",
+            "benchmark_preview.py", "test_toolkit.py")
         run(sys.executable, "test_toolkit.py")
+        run(sys.executable, "build_preview.py", "--renderer", "svg")
+        run(sys.executable, "build_preview.py", "--renderer", "raster")
+        run(sys.executable, "build_preview.py", "--maintenance")
     except subprocess.CalledProcessError as error:
         print(f"Validation failed (exit code {error.returncode}).", file=sys.stderr)
         return error.returncode

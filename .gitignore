@@ -1,3 +1,4 @@
 /ui/target/
 /dist/
+/artifacts/
 /__pycache__/

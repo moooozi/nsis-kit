@@ -1,0 +1,2 @@
+Harmless Native NSIS UI preview.
+Extracted only into the private NSIS plugin directory; never into the displayed destination.
