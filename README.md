@@ -1,5 +1,8 @@
 # Native NSIS toolkit
 
+> [!NOTE]
+> This repository is vibe coded.
+
 A reusable Rust/Win32 Unicode UI and ordinary NSIS installer/uninstaller for
 Windows 10/11 x64 machine-wide desktop applications. This directory is the
 standalone repository boundary: it has no application workspace, asset, Node,
