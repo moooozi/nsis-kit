@@ -1,11 +1,21 @@
 """Opt-in desktop tests of the harmless maintenance preview, never the real installer."""
 
 import os
-from pathlib import Path
 import subprocess
 import unittest
+from pathlib import Path
 
-from desktop_helpers import UI_CLASS, DesktopLease, caption, click, own_window, screenshot, u, wait_for, windows
+from desktop_helpers import (
+    UI_CLASS,
+    DesktopLease,
+    caption,
+    click,
+    own_window,
+    screenshot,
+    u,
+    wait_for,
+    windows,
+)
 
 ARTIFACTS = Path(__file__).resolve().parent / "artifacts"
 EXE = ARTIFACTS / "NativeNSIS-maintenance-preview.exe"
@@ -26,16 +36,22 @@ class MaintenanceTests(unittest.TestCase):
     def preview(self, theme):
         self.assertTrue(EXE.is_file(), "Build with --maintenance first")
 
-        process = subprocess.Popen([str(EXE)], env={**os.environ, "NATIVE_INSTALLER_THEME": theme})
+        process = subprocess.Popen(
+            [str(EXE)], env={**os.environ, "NATIVE_INSTALLER_THEME": theme}
+        )
         self.addCleanup(self.reap_fixture, process)
-        window = wait_for(lambda: next((w for w in windows(UI_CLASS) if own_window(w, process.pid)), None), "maintenance fixture")
+        window = wait_for(
+            lambda: next(
+                (w for w in windows(UI_CLASS) if own_window(w, process.pid)), None
+            ),
+            "maintenance fixture",
+        )
         self.assertEqual(caption(window), "Setup - Example App (NSIS preview)")
         self.assertFalse(u.GetDlgItem(window, 101))
         self.assertEqual(caption(u.GetDlgItem(window, 104)), "&Uninstall")
         self.assertEqual(caption(u.GetDlgItem(window, 105)), "&Reinstall")
         self.assertEqual(caption(u.GetDlgItem(window, 1)), "&Launch")
         return process, window
-
 
     def test_launch_and_both_themes(self):
         for theme in ["light", "dark"]:
@@ -47,14 +63,21 @@ class MaintenanceTests(unittest.TestCase):
 
     def test_button_text_padding_across_monitor_dpis(self):
         import desktop_helpers as desktop
-        desktop.g.GetTextExtentPoint32W.argtypes = [desktop.W.HDC, desktop.W.LPCWSTR,
-                                                   desktop.C.c_int, desktop.C.POINTER(desktop.W.SIZE)]
+
+        desktop.g.GetTextExtentPoint32W.argtypes = [
+            desktop.W.HDC,
+            desktop.W.LPCWSTR,
+            desktop.C.c_int,
+            desktop.C.POINTER(desktop.W.SIZE),
+        ]
         desktop.g.CreateFontIndirectW.argtypes = [desktop.C.POINTER(desktop.LogFont)]
         desktop.g.CreateFontIndirectW.restype = desktop.W.HFONT
         process, window = self.preview("dark")
         seen = set()
         for area in desktop.monitor_work_areas():
-            self.assertTrue(u.SetWindowPos(window, None, area.left + 30, area.top + 30, 0, 0, 0x15))
+            self.assertTrue(
+                u.SetWindowPos(window, None, area.left + 30, area.top + 30, 0, 0, 0x15)
+            )
             u.UpdateWindow(window)
             dpi = u.GetDpiForWindow(window)
             seen.add(dpi)
@@ -62,13 +85,20 @@ class MaintenanceTests(unittest.TestCase):
                 button = u.GetDlgItem(window, control)
                 rect = desktop.W.RECT()
                 u.GetClientRect(button, desktop.C.byref(rect))
-                self.assertEqual((rect.right, rect.bottom),
-                                 (desktop.scale(80, dpi), desktop.scale(34, dpi)))
+                self.assertEqual(
+                    (rect.right, rect.bottom),
+                    (desktop.scale(80, dpi), desktop.scale(34, dpi)),
+                )
                 # GDI fonts belong to their process. Recreate the control's
                 # actual LOGFONT locally rather than selecting its foreign HFONT.
                 font = desktop.LogFont()
-                self.assertTrue(desktop.g.GetObjectW(u.SendMessageW(button, 0x31, 0, 0),
-                                                    desktop.C.sizeof(font), desktop.C.byref(font)))
+                self.assertTrue(
+                    desktop.g.GetObjectW(
+                        u.SendMessageW(button, 0x31, 0, 0),
+                        desktop.C.sizeof(font),
+                        desktop.C.byref(font),
+                    )
+                )
                 self.assertEqual(font.height, -desktop.scale(12, dpi))
                 local_font = desktop.g.CreateFontIndirectW(desktop.C.byref(font))
                 self.assertTrue(local_font)
@@ -78,9 +108,17 @@ class MaintenanceTests(unittest.TestCase):
                 try:
                     label = caption(button).replace("&", "")
                     extent = desktop.W.SIZE()
-                    self.assertTrue(desktop.g.GetTextExtentPoint32W(dc, label, len(label), desktop.C.byref(extent)))
-                    self.assertGreaterEqual(rect.right - extent.cx, desktop.scale(20, dpi))
-                    self.assertGreaterEqual(rect.bottom - extent.cy, desktop.scale(12, dpi))
+                    self.assertTrue(
+                        desktop.g.GetTextExtentPoint32W(
+                            dc, label, len(label), desktop.C.byref(extent)
+                        )
+                    )
+                    self.assertGreaterEqual(
+                        rect.right - extent.cx, desktop.scale(20, dpi)
+                    )
+                    self.assertGreaterEqual(
+                        rect.bottom - extent.cy, desktop.scale(12, dpi)
+                    )
                 finally:
                     desktop.g.SelectObject(dc, previous)
                     u.ReleaseDC(button, dc)
@@ -89,7 +127,9 @@ class MaintenanceTests(unittest.TestCase):
         click(window, 1)
         self.assertEqual(process.wait(timeout=10), 10)
         if len(seen) < 2:
-            self.skipTest("Button padding passed, but multiple physical monitor DPIs were not available")
+            self.skipTest(
+                "Button padding passed, but multiple physical monitor DPIs were not available"
+            )
 
     def test_uninstall_and_reinstall_only_return_actions(self):
         for control, code in [(104, 12), (105, 11)]:

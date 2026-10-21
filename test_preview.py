@@ -1,20 +1,38 @@
 """Opt-in desktop tests of harmless generic previews. Run suites serially."""
+
 import argparse
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
 import unittest
+from pathlib import Path
 
-from desktop_helpers import (C, W, CALLBACK, DesktopLease, LogFont, caption, click,
-                             g, monitor_work_areas, own_window, scale, screenshot,
-                             set_text, u, UI_CLASS, wait_for, windows)
+from desktop_helpers import (
+    CALLBACK,
+    UI_CLASS,
+    C,
+    DesktopLease,
+    LogFont,
+    W,
+    caption,
+    click,
+    g,
+    monitor_work_areas,
+    own_window,
+    scale,
+    screenshot,
+    set_text,
+    u,
+    wait_for,
+    windows,
+)
 
 ARTIFACTS = Path(__file__).resolve().parent / "artifacts"
 RENDERER = "svg"
 THEME = "dark"
 EXE = ARTIFACTS / "NativeNSIS-preview-svg.exe"
+
 
 class PreviewTests(unittest.TestCase):
     @classmethod
@@ -39,18 +57,29 @@ class PreviewTests(unittest.TestCase):
 
         def startup():
             for dialog in windows("#32770"):
-                if not own_window(dialog, self.process.pid) or caption(dialog) != "Setup - Example App (NSIS preview)":
+                if (
+                    not own_window(dialog, self.process.pid)
+                    or caption(dialog) != "Setup - Example App (NSIS preview)"
+                ):
                     continue
                 labels = []
+
                 @CALLBACK
-                def visit(child, _):
+                def visit(child, _, labels=labels):
                     labels.append(caption(child))
                     return True
+
                 u.EnumChildWindows(dialog, visit, 0)
-                if any("Unable to create the preview UI" in value or "Unable to load the preview UI" in value for value in labels):
+                if any(
+                    "Unable to create the preview UI" in value
+                    or "Unable to load the preview UI" in value
+                    for value in labels
+                ):
                     click(dialog, 1)
                     raise AssertionError("Preview startup failed: " + " ".join(labels))
-            return next((w for w in windows(UI_CLASS) if own_window(w, self.process.pid)), None)
+            return next(
+                (w for w in windows(UI_CLASS) if own_window(w, self.process.pid)), None
+            )
 
         self.window = wait_for(startup, "preview window")
         self.pid = W.DWORD()
@@ -70,25 +99,39 @@ class PreviewTests(unittest.TestCase):
 
     def assert_layout(self, window):
         dpi = u.GetDpiForWindow(window)
-        self.assertEqual(u.GetPropW(window, "NativeInstaller.NsisLogoRenderer"), self.expected_renderer,
-                         "SVG checks must not silently pass using the ICO fallback")
+        self.assertEqual(
+            u.GetPropW(window, "NativeInstaller.NsisLogoRenderer"),
+            self.expected_renderer,
+            "SVG checks must not silently pass using the ICO fallback",
+        )
         client = W.RECT()
         u.GetClientRect(window, C.byref(client))
-        self.assertEqual((client.right, client.bottom), (scale(640, dpi), scale(320, dpi)))
-        for id, bounds in [(101, (58, 174, 430, 20)), (102, (44, 134, 240, 18)),
-                           (100, (516, 166, 80, 34)), (103, (44, 248, 544, 18)),
-                           (1, (458, 272, 80, 34)), (2, (548, 272, 80, 34))]:
+        self.assertEqual(
+            (client.right, client.bottom), (scale(640, dpi), scale(320, dpi))
+        )
+        for id, bounds in [
+            (101, (58, 174, 430, 20)),
+            (102, (44, 134, 240, 18)),
+            (100, (516, 166, 80, 34)),
+            (103, (44, 248, 544, 18)),
+            (1, (458, 272, 80, 34)),
+            (2, (548, 272, 80, 34)),
+        ]:
             control = u.GetDlgItem(window, id)
             if not control:
                 continue
             rect = W.RECT()
             u.GetWindowRect(control, C.byref(rect))
-            u.MapWindowPoints(None, window, C.cast(C.byref(rect), C.POINTER(W.POINT)), 2)
+            u.MapWindowPoints(
+                None, window, C.cast(C.byref(rect), C.POINTER(W.POINT)), 2
+            )
             x, y, width, height = bounds
             if id == 1 and caption(control) == "Close":
                 x = 548  # Completion uses the rightmost footer slot.
-            self.assertEqual((rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top),
-                             tuple(scale(v, dpi) for v in (x, y, width, height)))
+            self.assertEqual(
+                (rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top),
+                tuple(scale(v, dpi) for v in (x, y, width, height)),
+            )
             self.assertGreaterEqual(rect.left, 0)
             self.assertLessEqual(rect.right, client.right)
             self.assertLessEqual(rect.bottom, client.bottom)
@@ -99,7 +142,10 @@ class PreviewTests(unittest.TestCase):
         return dpi
 
     def test_selected_logo_renderer(self):
-        self.assertEqual(u.GetPropW(self.window, "NativeInstaller.NsisLogoRenderer"), self.expected_renderer)
+        self.assertEqual(
+            u.GetPropW(self.window, "NativeInstaller.NsisLogoRenderer"),
+            self.expected_renderer,
+        )
 
     def test_forced_svg_fallback(self):
         if RENDERER != "svg":
@@ -108,7 +154,11 @@ class PreviewTests(unittest.TestCase):
         screenshot(self.window, ARTIFACTS / "nsis-preview-svg-fallback.png")
 
     def test_per_monitor_v2_initial_layout(self):
-        self.assertTrue(u.AreDpiAwarenessContextsEqual(u.GetWindowDpiAwarenessContext(self.window), C.c_void_p(-4)))
+        self.assertTrue(
+            u.AreDpiAwarenessContextsEqual(
+                u.GetWindowDpiAwarenessContext(self.window), C.c_void_p(-4)
+            )
+        )
         self.assert_layout(self.window)
 
     def test_monitor_moves_relayout_selection_and_completion(self):
@@ -119,16 +169,31 @@ class PreviewTests(unittest.TestCase):
         seen = set()
         for _ in range(2):
             for area in monitor_work_areas():
-                self.assertTrue(u.SetWindowPos(self.window, None, area.left + 30, area.top + 30, 0, 0, 0x15))
+                self.assertTrue(
+                    u.SetWindowPos(
+                        self.window, None, area.left + 30, area.top + 30, 0, 0, 0x15
+                    )
+                )
                 u.UpdateWindow(self.window)
                 seen.add(self.assert_layout(self.window))
                 self.assertEqual(caption(edit), path)
-                self.assertEqual(u.SendMessageW(edit, 0xB0, 0, 0), 2 | (7 << 16))  # EM_GETSEL
+                self.assertEqual(
+                    u.SendMessageW(edit, 0xB0, 0, 0), 2 | (7 << 16)
+                )  # EM_GETSEL
                 dpi = u.GetDpiForWindow(self.window)
                 screenshot(self.window, ARTIFACTS / f"nsis-preview-dpi-{dpi}.png")
         click(self.window, 1)
-        finished = wait_for(lambda: next((w for w in windows(UI_CLASS)
-            if w not in self.baseline and not u.GetDlgItem(w, 101)), None), "completion page")
+        finished = wait_for(
+            lambda: next(
+                (
+                    w
+                    for w in windows(UI_CLASS)
+                    if w not in self.baseline and not u.GetDlgItem(w, 101)
+                ),
+                None,
+            ),
+            "completion page",
+        )
         for area in monitor_work_areas():
             u.SetWindowPos(finished, None, area.left + 30, area.top + 30, 0, 0, 0x15)
             u.UpdateWindow(finished)
@@ -136,7 +201,9 @@ class PreviewTests(unittest.TestCase):
         click(finished, 1)
         self.assertEqual(self.process.wait(timeout=10), 0)
         if len(seen) < 2:
-            self.skipTest("Layout passed, but multiple physical monitor DPIs were not available")
+            self.skipTest(
+                "Layout passed, but multiple physical monitor DPIs were not available"
+            )
 
     def test_hover_repaints_on_transition_not_every_mouse_move(self):
         button = u.GetDlgItem(self.window, 1)
@@ -151,21 +218,28 @@ class PreviewTests(unittest.TestCase):
         u.SetCursorPos(point.x, point.y)
         time.sleep(0.1)
         if u.WindowFromPoint(point) != button:
-            self.skipTest("The preview button is occluded on this desktop; TrackMouseEvent cannot test stationary hover")
+            self.skipTest(
+                "The preview button is occluded on this desktop; TrackMouseEvent cannot test stationary hover"
+            )
         u.SendMessageW(button, 0x2A3, 0, 0)  # WM_MOUSELEAVE
         u.UpdateWindow(button)
         u.SendMessageW(button, 0x200, 0, 8 | (8 << 16))
         u.UpdateWindow(button)
         for x in range(9, 30):
             u.SendMessageW(button, 0x200, 0, x | (8 << 16))
-            self.assertFalse(u.GetUpdateRect(button, None, False), "Stationary hover must not repaint")
+            self.assertFalse(
+                u.GetUpdateRect(button, None, False),
+                "Stationary hover must not repaint",
+            )
         screenshot(self.window, ARTIFACTS / "nsis-preview-hover.png")
         u.SendMessageW(button, 0x2A3, 0, 0)
         u.UpdateWindow(button)
 
     def test_button_edges_have_antialiased_pixels(self):
         u.UpdateWindow(self.window)
-        width, height, pixels = screenshot(self.window, ARTIFACTS / "nsis-preview-aa.png")
+        width, height, pixels = screenshot(
+            self.window, ARTIFACTS / "nsis-preview-aa.png"
+        )
         window, button = W.RECT(), W.RECT()
         u.GetWindowRect(self.window, C.byref(window))
         u.GetWindowRect(u.GetDlgItem(self.window, 1), C.byref(button))
@@ -173,15 +247,28 @@ class PreviewTests(unittest.TestCase):
         for y in range(button.top - window.top, button.top - window.top + 3):
             for x in range(button.left - window.left, button.right - window.left):
                 i = ((height - 1 - y) * width + x) * 4
-                blue, green, red = pixels[i:i + 3]
-                if ((THEME == "dark" and 0 < red < 23 and 23 < green < 185 and 23 < blue < 232)
-                        or (THEME == "light" and 0 < red < 245 and 185 < green < 245 and 232 < blue < 245)):
+                blue, green, red = pixels[i : i + 3]
+                if (
+                    THEME == "dark"
+                    and 0 < red < 23
+                    and 23 < green < 185
+                    and 23 < blue < 232
+                ) or (
+                    THEME == "light"
+                    and 0 < red < 245
+                    and 185 < green < 245
+                    and 232 < blue < 245
+                ):
                     blends += 1
-        self.assertGreater(blends, 0, "Rounded edges should blend cyan into the background")
+        self.assertGreater(
+            blends, 0, "Rounded edges should blend cyan into the background"
+        )
 
     def test_cancel_and_capture(self):
         program_files = Path(os.environ.get("ProgramW6432", os.environ["ProgramFiles"]))
-        self.assertEqual(caption(u.GetDlgItem(self.window, 101)), str(program_files / "Example App"))
+        self.assertEqual(
+            caption(u.GetDlgItem(self.window, 101)), str(program_files / "Example App")
+        )
         screenshot(self.window, ARTIFACTS / "nsis-preview.png")
         click(self.window, 2)
         self.assertEqual(self.process.wait(timeout=10), 1)
@@ -192,8 +279,17 @@ class PreviewTests(unittest.TestCase):
         self.assertFalse(destination.exists())
         set_text(u.GetDlgItem(self.window, 101), str(destination))
         click(self.window, 1)
-        finished = wait_for(lambda: next((w for w in windows(UI_CLASS)
-            if w not in self.baseline and not u.GetDlgItem(w, 101)), None), "completion page")
+        finished = wait_for(
+            lambda: next(
+                (
+                    w
+                    for w in windows(UI_CLASS)
+                    if w not in self.baseline and not u.GetDlgItem(w, 101)
+                ),
+                None,
+            ),
+            "completion page",
+        )
         screenshot(finished, ARTIFACTS / "nsis-preview-complete.png")
         click(finished, 1)
         self.assertEqual(self.process.wait(timeout=10), 0)
@@ -204,7 +300,10 @@ class PreviewTests(unittest.TestCase):
         set_text(u.GetDlgItem(self.window, 101), path)
         previous = set(windows("#32770"))
         click(self.window, 100)
-        dialog = wait_for(lambda: next((w for w in windows("#32770") if w not in previous), None), "folder browser")
+        dialog = wait_for(
+            lambda: next((w for w in windows("#32770") if w not in previous), None),
+            "folder browser",
+        )
         click(dialog, 2)
         wait_for(lambda: dialog not in windows("#32770"), "folder browser close")
         self.assertEqual(caption(u.GetDlgItem(self.window, 101)), path)
@@ -214,8 +313,13 @@ class PreviewTests(unittest.TestCase):
     def test_relative_path_is_rejected(self):
         set_text(u.GetDlgItem(self.window, 101), "relative-path")
         click(self.window, 1)
-        wait_for(lambda: caption(u.GetDlgItem(self.window, 103)), "inline path validation")
-        self.assertEqual(caption(u.GetDlgItem(self.window, 103)), "Enter an absolute installation folder path.")
+        wait_for(
+            lambda: caption(u.GetDlgItem(self.window, 103)), "inline path validation"
+        )
+        self.assertEqual(
+            caption(u.GetDlgItem(self.window, 103)),
+            "Enter an absolute installation folder path.",
+        )
         self.assertTrue(u.GetDlgItem(self.window, 101))
         click(self.window, 2)
         self.assertEqual(self.process.wait(timeout=10), 1)

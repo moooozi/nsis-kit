@@ -1,9 +1,10 @@
 """Shared Windows desktop-test helpers; no product or preview dependencies."""
+
 import ctypes as C
-from ctypes import wintypes as W
 import struct
 import time
 import zlib
+from ctypes import wintypes as W
 
 UI_CLASS = "NativeNSISInstaller"
 u = C.WinDLL("user32", use_last_error=True)
@@ -35,7 +36,15 @@ g.SelectObject.argtypes = [W.HDC, W.HGDIOBJ]
 g.SelectObject.restype = W.HGDIOBJ
 g.DeleteObject.argtypes = [W.HGDIOBJ]
 g.DeleteDC.argtypes = [W.HDC]
-g.GetDIBits.argtypes = [W.HDC, W.HBITMAP, W.UINT, W.UINT, C.c_void_p, C.c_void_p, W.UINT]
+g.GetDIBits.argtypes = [
+    W.HDC,
+    W.HBITMAP,
+    W.UINT,
+    W.UINT,
+    C.c_void_p,
+    C.c_void_p,
+    W.UINT,
+]
 u.GetPropW.argtypes = [W.HWND, W.LPCWSTR]
 u.GetPropW.restype = W.HANDLE
 u.GetDpiForWindow.argtypes = [W.HWND]
@@ -59,15 +68,31 @@ u.GetMonitorInfoW.argtypes = [W.HMONITOR, C.c_void_p]
 
 
 class MonitorInfo(C.Structure):
-    _fields_ = [("size", W.DWORD), ("monitor", W.RECT), ("work", W.RECT), ("flags", W.DWORD)]
+    _fields_ = [
+        ("size", W.DWORD),
+        ("monitor", W.RECT),
+        ("work", W.RECT),
+        ("flags", W.DWORD),
+    ]
 
 
 class LogFont(C.Structure):
-    _fields_ = [("height", W.LONG), ("width", W.LONG), ("escapement", W.LONG),
-                ("orientation", W.LONG), ("weight", W.LONG),
-                ("italic", W.BYTE), ("underline", W.BYTE), ("strike", W.BYTE),
-                ("charset", W.BYTE), ("out", W.BYTE), ("clip", W.BYTE),
-                ("quality", W.BYTE), ("pitch", W.BYTE), ("face", W.WCHAR * 32)]
+    _fields_ = [
+        ("height", W.LONG),
+        ("width", W.LONG),
+        ("escapement", W.LONG),
+        ("orientation", W.LONG),
+        ("weight", W.LONG),
+        ("italic", W.BYTE),
+        ("underline", W.BYTE),
+        ("strike", W.BYTE),
+        ("charset", W.BYTE),
+        ("out", W.BYTE),
+        ("clip", W.BYTE),
+        ("quality", W.BYTE),
+        ("pitch", W.BYTE),
+        ("face", W.WCHAR * 32),
+    ]
 
 
 g.GetObjectW.argtypes = [W.HGDIOBJ, C.c_int, C.c_void_p]
@@ -147,24 +172,34 @@ def screenshot(hwnd, path):
         if not u.PrintWindow(hwnd, memory, 2):
             raise AssertionError("PrintWindow failed")
         g.SelectObject(memory, previous)
-        header = struct.pack("<IiiHHIIiiII", 40, width, height, 1, 32, 0, width * height * 4, 0, 0, 0, 0)
+        header = struct.pack(
+            "<IiiHHIIiiII", 40, width, height, 1, 32, 0, width * height * 4, 0, 0, 0, 0
+        )
         info = C.create_string_buffer(header)
         pixels = C.create_string_buffer(width * height * 4)
         if not g.GetDIBits(memory, bitmap, 0, height, pixels, info, 0):
             raise AssertionError("GetDIBits failed")
         rows = []
         for y in reversed(range(height)):
-            row = pixels.raw[y * width * 4:(y + 1) * width * 4]
+            row = pixels.raw[y * width * 4 : (y + 1) * width * 4]
             rgb = bytearray(width * 3)
             rgb[0::3], rgb[1::3], rgb[2::3] = row[2::4], row[1::4], row[0::4]
             rows.append(b"\0" + rgb)
 
         def chunk(kind, data):
-            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+            return (
+                struct.pack(">I", len(data))
+                + kind
+                + data
+                + struct.pack(">I", zlib.crc32(kind + data))
+            )
 
-        path.write_bytes(b"\x89PNG\r\n\x1a\n"
-                         + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
-                         + chunk(b"IDAT", zlib.compress(b"".join(rows))) + chunk(b"IEND", b""))
+        path.write_bytes(
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(b"".join(rows)))
+            + chunk(b"IEND", b"")
+        )
         return width, height, pixels.raw
     finally:
         g.SelectObject(memory, previous)
@@ -182,18 +217,23 @@ def own_window(hwnd, pid):
 
 class DesktopLease:
     """Reject concurrent cursor/focus test suites in the same Windows session."""
+
     kernel = C.WinDLL("kernel32", use_last_error=True)
-    kernel.CreateMutexW.argtypes = [C.c_void_p, W.BOOL, W.LPCWSTR]
+    kernel.CreateMutexW.argtypes = (C.c_void_p, W.BOOL, W.LPCWSTR)
     kernel.CreateMutexW.restype = W.HANDLE
-    kernel.CloseHandle.argtypes = [W.HANDLE]
+    kernel.CloseHandle.argtypes = (W.HANDLE,)
 
     def __init__(self):
         C.set_last_error(0)
-        self.handle = self.kernel.CreateMutexW(None, False, "Local\\NativeInstaller.NsisDesktopValidation")
+        self.handle = self.kernel.CreateMutexW(
+            None, False, "Local\\NativeInstaller.NsisDesktopValidation"
+        )
         status = C.get_last_error()
         if not self.handle or status == 183:
             self.close()
-            raise RuntimeError("Another NSIS desktop test suite is active; run desktop tests serially")
+            raise RuntimeError(
+                "Another NSIS desktop test suite is active; run desktop tests serially"
+            )
 
     def close(self):
         if self.handle:

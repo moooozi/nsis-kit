@@ -1,8 +1,9 @@
 """Opt-in, warm-start A/B measurement of only the harmless preview executables."""
+
 import json
-from pathlib import Path
 import statistics
 import time
+from pathlib import Path
 
 import test_preview as preview
 
@@ -52,14 +53,23 @@ def main():
     finally:
         preview.wait_for = original_wait
         lease.close()
-    report = {"method": "7 alternating warm launches per renderer; spawn to visible preview; 2ms polling",
-              "renderers": {renderer: {
-                  **json.loads((ROOT / f"artifacts/NativeNSIS-preview-{renderer}.build.json").read_text()),
-                  "startup_ms": values,
-                  "startup_median_ms": statistics.median(values),
-                  "startup_min_ms": min(values),
-                  "startup_max_ms": max(values),
-              } for renderer, values in measurements.items()}}
+    report = {
+        "method": "7 alternating warm launches per renderer; spawn to visible preview; 2ms polling",
+        "renderers": {
+            renderer: {
+                **json.loads(
+                    (
+                        ROOT / f"artifacts/NativeNSIS-preview-{renderer}.build.json"
+                    ).read_text()
+                ),
+                "startup_ms": values,
+                "startup_median_ms": statistics.median(values),
+                "startup_min_ms": min(values),
+                "startup_max_ms": max(values),
+            }
+            for renderer, values in measurements.items()
+        },
+    }
     (OUTPUT / "startup-comparison.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2))
 
