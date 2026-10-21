@@ -16,18 +16,6 @@
   ${EndIf}
 !macroend
 
-; This toolkit supports one consumer-configured, machine-wide destination.
-!macro DefineLocationCheck PREFIX
-Function ${PREFIX}CheckInstallLocation
-  StrCmp "$INSTDIR" "${APP_DIRECTORY}" location_ok
-  StrCpy $Failure "This installer uses ${APP_DIRECTORY}. Remove an older custom-location installation with its original uninstaller before installing here."
-  Call ${PREFIX}Fail
-location_ok:
-FunctionEnd
-!macroend
-!insertmacro DefineLocationCheck ""
-!insertmacro DefineLocationCheck "un."
-
 Function Fail
   !insertmacro HandoffForeground
   DetailPrint "$Failure"

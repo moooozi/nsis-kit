@@ -13,9 +13,10 @@ NSIS owns extraction, registration, shortcuts and explicit file removal. The
 shared DLL owns presentation, elevation, worker observation and unelevated launch.
 The [ownership protocol](#file-ownership-protocol) governs replacement and removal.
 Failures stop without automatic rollback.
-Concurrent installation/removal is unsupported. The configured destination is
-fixed; arbitrary `/D=` locations, per-user installation and non-x64 payloads are
-outside the current scope.
+Concurrent installation/removal is unsupported. New installs use the configured
+default destination; upgrades and maintenance use the registered installation
+directory. `/D=` selects a destination for a new installation. Installations are
+machine-wide and application payloads must be x64.
 
 ## Build an installer
 
@@ -36,7 +37,7 @@ toolkit include path. Supply these settings:
 | --- | --- |
 | `APP_NAME` | Display name; also the Start menu shortcut basename |
 | `APP_EXE` | Application executable basename, including `.exe` |
-| `APP_DIRECTORY` | Fixed machine-wide destination, normally under `$PROGRAMFILES64` |
+| `APP_DIRECTORY` | Default machine-wide destination, normally under `$PROGRAMFILES64` |
 | `APP_KEY` | Unique 64-bit HKLM uninstall key |
 | `APP_PUBLISHER` | Publisher/version-resource attribution |
 | `APP_DESCRIPTION` | Installation screen description |

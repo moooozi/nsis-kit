@@ -20,7 +20,6 @@ Function un.Initialize
   ${EndIf}
   SetRegView 64
   SetShellVarContext all
-  Call un.CheckInstallLocation
   ReadRegStr $0 HKLM "${APP_KEY}" "InstallLocation"
   ReadRegStr $1 HKLM "${APP_KEY}" "${APP_MARKER}"
   ${If} $0 != $INSTDIR

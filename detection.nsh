@@ -47,7 +47,6 @@ Function InitializeSetup
     SetSilent silent
   ${EndIf}
   Call ReadInstallation
-  Call CheckInstallLocation
   ${If} $ExistingKey != ""
     ${If} $ExistingKind == "native"
       IfFileExists "$INSTDIR\uninstall.exe" +3
@@ -106,7 +105,6 @@ Function InitializeSetup
     ${EndIf}
   ${EndIf}
 selection_done:
-  Call CheckInstallLocation
   ${If} $Worker != 1
     StrCpy $0 "$WorkerArguments"
     ${If} $Automatic == 1

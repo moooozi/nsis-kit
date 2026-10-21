@@ -407,6 +407,28 @@ Var ExampleValue
                 self.assertEqual(executable.read_bytes(), payload)
                 self.assertEqual(self.installed_value("FileOwnershipProtocol")[0], 4)
 
+    def test_custom_directory_supports_install_upgrade_and_uninstall(self):
+        self.directory = self.base / "Custom location é" / "Example App"
+        self.run_setup()
+        self.assertEqual(
+            self.installed_value("InstallLocation")[0], str(self.directory)
+        )
+        sentinel = self.directory / "user-data.txt"
+        sentinel.write_bytes(b"keep user data")
+        self.run_setup("/AUTOMATIC")
+        self.assertEqual(
+            self.installed_value("InstallLocation")[0], str(self.directory)
+        )
+        self.assertTrue((self.directory / "example.exe").is_file())
+        shutil.copyfile(self.directory / "uninstall.exe", self.uninstaller)
+        command = (
+            subprocess.list2cmdline([str(self.uninstaller), "/S"])
+            + f" _?={self.directory}"
+        )
+        self.assertEqual(subprocess.run(command, check=False, timeout=30).returncode, 0)
+        self.assertFalse((self.directory / "example.exe").exists())
+        self.assertEqual(sentinel.read_bytes(), b"keep user data")
+
     def test_absent_or_unknown_ownership_protocol_runs_the_installed_uninstaller(self):
         self.run_setup()
         for protocol in [None, 1, 2, 3, 99]:
