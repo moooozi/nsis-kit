@@ -60,6 +60,23 @@ Use `--target-dir` for an isolated build cache. Builds
 sharing the standard DLL output hold a build-time lock through NSIS compilation.
 Signing and release publication belong to the consumer.
 
+### Prebuilt production DLL
+
+`.github/workflows/build-dll.yml` builds the production DLL on each push to `main`
+and supports manual runs. It compiles the `installer` feature for
+`i686-pc-windows-msvc`, loads the DLL in the export checker and rejects fixture
+code. The result is published with build provenance as a prerelease named
+`dll-<full-toolkit-commit>`, containing `native_nsis_ui.dll` and `plugin.json`.
+Existing DLL releases are never overwritten and are not marked as the latest
+stable release. Consumers use the exact toolkit commit, not a moving branch or
+latest release; binaries remain available without Actions artifact expiry.
+
+Download both files into a directory and pass `--plugin-artifact path/to/dll`
+to the installer builder to skip plugin compilation. `dll_artifact.py` verifies
+the toolkit revision, production features, target and SHA-256 checksum before use.
+`python dll_artifact.py path/to/dll --verify` performs the same check separately.
+Without `--plugin-artifact`, local builds continue to compile the plugin.
+
 ## Presentation and maintenance
 
 The compact UI uses direct dimensions: a 640 by 320 DIP client, 80 by 34 DIP

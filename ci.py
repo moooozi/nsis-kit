@@ -67,6 +67,8 @@ def main():
             "ci.py",
             "build.py",
             "build_support.py",
+            "dll_artifact.py",
+            "test_dll_artifact.py",
             "build_preview.py",
             "desktop_helpers.py",
             "test_preview.py",
@@ -74,6 +76,7 @@ def main():
             "benchmark_preview.py",
             "test_toolkit.py",
         )
+        run(sys.executable, "-B", "-m", "unittest", "test_dll_artifact")
         run(sys.executable, "test_toolkit.py")
         run(sys.executable, "build_preview.py", "--renderer", "svg")
         run(sys.executable, "build_preview.py", "--renderer", "raster")

@@ -1,0 +1,66 @@
+name: Publish production DLL
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-dll-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Test artifact identity checks
+        run: python -B -m unittest test_dll_artifact
+      - name: Set up compiler
+        shell: pwsh
+        run: |
+          rustup update stable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup target add i686-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ui/target
+          key: production-dll-${{ runner.os }}-${{ hashFiles('ui/Cargo.lock', 'ui/Cargo.toml') }}
+          restore-keys: production-dll-${{ runner.os }}-
+      - name: Compile and check production DLL
+        run: python dll_artifact.py artifacts/nsis-dll
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: artifacts/nsis-dll/native_nsis_ui.dll
+      - name: Publish immutable DLL release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVISION: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "dll-$env:REVISION"
+          # A rerun must never overwrite a published binary or its identity.
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "DLL release $tag already exists; existing DLL releases are immutable."
+          }
+          gh release create $tag artifacts/nsis-dll/native_nsis_ui.dll artifacts/nsis-dll/plugin.json --repo $env:GITHUB_REPOSITORY --target $env:REVISION --title "Production DLL $env:REVISION" --notes "Production x86 NSIS UI DLL built with the installer feature. Includes toolkit revision and SHA-256 metadata. No fixture code." --prerelease --latest=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

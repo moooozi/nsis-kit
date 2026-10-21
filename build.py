@@ -12,6 +12,7 @@ from build_support import (
     verify_payload_architecture,
     verify_unelevated_manifest,
 )
+from dll_artifact import verify_artifact
 
 
 def main():
@@ -29,6 +30,11 @@ def main():
     parser.add_argument(
         "--target-dir", type=Path, help="Private Cargo output directory"
     )
+    parser.add_argument(
+        "--plugin-artifact",
+        type=Path,
+        help="Verified production DLL release directory; skip plugin compilation",
+    )
     args = parser.parse_args()
     if os.name != "nt":
         parser.error("Windows and the MSVC toolchain are required")
@@ -43,7 +49,11 @@ def main():
     verify_payload_architecture(payload)
     output.parent.mkdir(parents=True, exist_ok=True)
     with build_lock(args.target_dir):
-        dll = build_plugin(args.target_dir)
+        dll = (
+            verify_artifact(args.plugin_artifact)
+            if args.plugin_artifact is not None
+            else build_plugin(args.target_dir)
+        )
         subprocess.run(
             [
                 find_makensis(),
