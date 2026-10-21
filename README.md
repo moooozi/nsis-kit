@@ -4,23 +4,20 @@
 > This repository is vibe coded.
 
 A reusable Rust/Win32 Unicode UI and ordinary NSIS installer/uninstaller for
-Windows 10/11 x64 machine-wide desktop applications. This directory is the
-standalone repository boundary: it has no application workspace, asset, Node,
-or product integration dependencies. `examples/desktop/setup.nsi` provides a minimal consumer with no custom
-lifecycle hooks.
+Windows 10/11 x64 machine-wide desktop applications. The toolkit is a standalone
+repository with its own build scripts, examples, tests and CI. Consumers supply
+application payload, branding and integration hooks. `examples/desktop/setup.nsi`
+provides a minimal consumer with no custom lifecycle hooks.
 
 NSIS owns extraction, registration, shortcuts and explicit file removal. The
 shared DLL owns presentation, elevation, worker observation and unelevated launch.
-Upgrades and Reinstall use the installed version's file ownership protocol when
-available, removing obsolete owned files and replacing the current payload. Older
-installations without the protocol are uninstalled before installing the new
-payload. There is no custom deployment engine, transaction journal or automatic
-rollback.
+The [ownership protocol](#file-ownership-protocol) governs replacement and removal.
+Failures stop without automatic rollback.
 Concurrent installation/removal is unsupported. The configured destination is
 fixed; arbitrary `/D=` locations, per-user installation and non-x64 payloads are
 outside the current scope.
 
-## Consume
+## Build an installer
 
 To try the unmodified example with an existing x64 application executable:
 
@@ -53,19 +50,17 @@ NSIS literals and NSIS escaping for your strings, rather than inserting untruste
 text. Keep the executable and installation directory appropriate for a
 machine-wide application. Reserve `uninstall.exe` for the generated uninstaller.
 
-Build from a precompiled application, without executing it:
-
-```console
-python path/to/toolkit/build.py --script path/to/project/setup.nsi --payload path/to/app.exe --version 1.2.3 --output path/to/ExampleApp-setup.exe
-```
+For a configured consumer, set `--script` to its entry point in the build command.
 
 Requires stock NSIS 3 Unicode, Python 3.11+, Rust/MSVC and the
 `i686-pc-windows-msvc` / `x86_64-pc-windows-msvc` targets. The builder checks the x64
 payload, x86 plugin exports, absence of fixture-only code, NSIS warnings and
 `asInvoker` manifest. Versions have three numeric components in `0..65535`.
-It never runs the output. Use `--target-dir` for an isolated build cache. Builds
+Use `--target-dir` for an isolated build cache. Builds
 sharing the standard DLL output hold a build-time lock through NSIS compilation.
 Signing and release publication belong to the consumer.
+
+## Presentation and maintenance
 
 The compact UI uses direct dimensions: a 640 by 320 DIP client, 80 by 34 DIP
 buttons, 12 DIP body text and 24 DIP headings. Monitor DPI is the only scaling
@@ -82,17 +77,15 @@ logo area and retains the SVG's `preserveAspectRatio` setting.
 
 The installer opens unelevated. Install/Reinstall/Uninstall request permission
 through a same-EXE worker. Launch remains unelevated. The custom window persists
-through permission, stage progress, errors and completion. Direct uninstall uses
-NSIS's native progress page and closes on success; the registered Settings command
-is silent. Replacement uses the installed ownership manifest when supported;
-otherwise it runs the installed version's uninstaller. Explicit removal always
-uses the installed uninstaller and its integration hooks.
-Unknown user files survive because directory removal is non-recursive.
+through permission, stage progress, errors and completion. Maintenance shows the
+installed/setup versions and selects Upgrade, Reinstall or Downgrade wording.
+It instructs users to close all app instances before replacement or uninstall.
 
 ## Lifecycle hooks
 
-Define optional NSIS macros before including `setup.nsh`. Defaults are in
-`hooks.nsh`; no application integration behavior is assumed.
+Define optional NSIS macros before including `setup.nsh`; defaults in `hooks.nsh`
+are empty except the explicit error for unconfigured non-native removal. Consumers
+supply integrations without requiring a particular app CLI or update protocol.
 
 | Macro | Contract |
 | --- | --- |
@@ -101,7 +94,7 @@ Define optional NSIS macros before including `setup.nsh`. Defaults are in
 | `PreflightInstall` | Read-only app prerequisites; reject unsupported state before shutdown |
 | `PrepareApplication` | Request and wait for application shutdown, before any installation mutations |
 | `AppOwnedFiles CALLBACK` | Enumerate every additional packaged file as a relative path using the supplied callback |
-| `BeforeReplace` | Remove old integrations before ownership-aware replacement; the old executable is still available |
+| `BeforeReplace` | Remove old integrations before ownership-aware replacement; the installed executable is available |
 | `InstallFiles` | Extract additional product-owned payload and check errors |
 | `AfterInstall` | Configure integrations after registration/uninstaller have been written |
 | `BeforeUninstall PREFIX` | Remove integrations in the installed uninstaller; `PREFIX` is `un.` |
@@ -129,24 +122,14 @@ after 20 for protocol-aware updates, `InstallFiles` after 40, and
 `AfterInstall` after 75, before the shared final 100 report. Shared stage labels
 remain product-neutral. `APP_DESCRIPTION` and `APP_SUCCESS` supply product copy.
 
-The installed uninstaller's removal sequence runs its consumer's integration-removal
-hook, deletes its installed files and shortcut, then removes registration and empty
-directories.
-Integration behavior belongs entirely to consumer hooks. The toolkit does not
-require an application CLI or assume any particular integration mechanism.
-Failures are reported; there is no automatic rollback.
-
-The worker enforces this ordering: validate both ownership lists, run read-only
-`PreflightInstall`, run `PrepareApplication`, remove old integrations/files,
-extract payload, register, run `AfterInstall`, then commit ownership. Hooks must
-stop on failure. Leave unused hooks empty; an app needs no updater or service.
-`PrepareApplication` may communicate with the running app, but must not remove
-integrations or modify the installation. Explicit removal uses `BeforeUninstall`
-instead; that hook must also stop any app components that prevent removal.
+Ownership validation precedes `PreflightInstall` and `PrepareApplication`.
+The latter may communicate with the app but must not mutate the installation.
+Explicit removal uses `BeforeUninstall`, which must also stop components that
+prevent file deletion. All hooks stop on failure.
 
 `BeforeReplace` is compiled into the incoming installer, whereas
-`BeforeUninstall` belongs to the installed version. New consumers must retain
-cleanup knowledge for integrations created by their supported previous versions.
+`BeforeUninstall` belongs to the installed version. Consumers must provide
+cleanup for integrations created by every installed version they support.
 Share an app-owned cleanup helper between those hooks when appropriate. The
 file ownership protocol does not track services, scheduled tasks, firewall rules
 or arbitrary registry integrations; those remain consumer responsibilities.
@@ -161,10 +144,9 @@ The hooks used on each path are:
 | Non-native migration | `PreflightInstall` → `PrepareApplication` → `RemovePrevious` → `InstallFiles` → `AfterInstall` |
 | Explicit removal | Installed uninstaller: `BeforeUninstall` → `DeleteFiles` → owned-file/shortcut/registration removal → `RemoveDirectories` |
 
-The core worker supplies main-executable extraction, registration and ownership
-publication around these hooks. Consumers extend these phases rather than
-implementing a replacement worker. Discovery and option parsing also run in the
-unelevated frontend, so do not perform privileged work there.
+Around these hooks, the core worker extracts the main executable and writes the
+uninstaller/registration before `AfterInstall`, then commits ownership on success.
+Discovery and option parsing also run unelevated and must perform no privileged work.
 
 Useful toolkit variables available to hooks:
 
@@ -182,7 +164,7 @@ Useful toolkit variables available to hooks:
 | `$Option`, `$StopOptions` | Current parsed token and consumer request to stop option interpretation |
 
 Use named consumer variables for persistent hook state. Toolkit helpers may
-overwrite scratch registers `$0`–`$9`; preserve values you still need. The removal
+overwrite scratch registers `$0`–`$9`; preserve values needed by later hooks. The removal
 hook's `PREFIX` selects `un.Fail` in the generated uninstaller, not a different
 application command.
 
@@ -227,12 +209,9 @@ values in the 64-bit registry view under the consumer's `APP_KEY`:
 | `OwnedFiles` | `REG_MULTI_SZ` | File paths relative to the registered `InstallLocation` |
 | `OwnedRegistryKeys` | `REG_MULTI_SZ` | Separate registry paths with explicit hive and view |
 
-`OwnedFiles` is generated from the same `OwnedFiles` enumeration as normal
-uninstall. It includes the main executable, `uninstall.exe`
-and every `AppOwnedFiles` entry. The template validates the new enumeration before
-preflight or extraction. The protocol marker is published only after `AfterInstall`
-succeeds; a fresh failed installation retains repair registration without claiming
-a complete manifest.
+The new enumeration is validated before preflight or extraction. Publication occurs
+after `AfterInstall` succeeds, with the protocol marker written last. A fresh failed
+installation retains repair registration without advertising a complete manifest.
 
 For protocol 4 installations, Setup reads the registry directly. It does not launch
 the old uninstaller or consume stdout for discovery. Lists must have the correct
@@ -247,8 +226,7 @@ UTF-16 code units are accepted. Absolute, rooted, UNC and drive-relative paths,
 `.`/`..` components anywhere, forward slashes, wildcards, alternate streams, empty
 components, trailing dots/spaces and existing reparse-point components are rejected.
 The registered location must match the consumer's fixed `APP_DIRECTORY`.
-Both the main executable and `uninstall.exe` must be present. Paths are revalidated
-when the snapshot is consumed for obsolete-file removal.
+Paths are revalidated when the snapshot is consumed for obsolete-file removal.
 
 `OwnedRegistryKeys` currently contains the toolkit's single registration key,
 `HKLM:64\<APP_KEY>`. Setup validates this separately and refreshes it through
@@ -258,11 +236,10 @@ entries never enter file deletion. An advertised v4 manifest that is missing,
 malformed or unsafe stops Setup before handoff or mutation; it does not trigger
 uninstall fallback.
 
-After preflight/handoff, `BeforeReplace` removes integrations, then Setup deletes
-only old entries absent from its new list and removes their empty parent folders.
-Current owned files are overwritten by the new payload. Registration and shortcuts
-are refreshed, and `AfterInstall` configures the new integrations. User files are
-preserved. Failed operations stop without automatic rollback.
+Supported replacement deletes only old entries absent from the new list and prunes
+their empty parent folders. Current owned files are overwritten; unowned user files
+are preserved. Explicit uninstall uses its embedded file list, removes its shortcut
+and registration, and removes only empty directories.
 
 If the ownership capability is absent or its version is unsupported, Setup instead
 copies the old uninstaller into its private temporary directory, runs it silently
@@ -273,7 +250,7 @@ A missing old uninstaller blocks replacement. If installation fails after fallba
 removal, rerun Setup as a fresh installation; the old version is not restored.
 Explicit Uninstall always runs the installed version's normal removal path.
 
-The installed native `DisplayIcon` identifies the previous main executable as an
+The installed native `DisplayIcon` identifies the installed main executable as an
 exact path below `InstallLocation`, matching the registration written by this
 toolkit. Its validated relative path and `uninstall.exe` must appear in the old
 list. The incoming executable may have a different name: the old executable is
@@ -318,10 +295,7 @@ that many arguments in their original order. It interprets no flags.
 The shared NSIS runtime supports `/AUTOMATIC` for unattended replacement of an
 existing registration, with downgrade rejection, and `/RESTARTAPP` for an explicit
 post-install launch. Install and Reinstall otherwise leave the application closed.
-Manual maintenance labels the replacement action Upgrade, Reinstall or Downgrade
-according to the installed/setup versions. It shows both versions and instructs
-users to close all running app instances before replacement or uninstall. Terminal `/D=` follows
-NSIS semantics but the destination must still match the configured fixed path.
+Terminal `/D=` follows NSIS semantics but must match the configured fixed path.
 
 Consumer command-line extensions use three optional macros:
 
@@ -354,12 +328,9 @@ The installer script/plugin interface is version **2**, returned by
 restart flag, then normalized consumer arguments. `NormalizeWorkerArguments`
 takes raw consumer arguments and directory, and returns canonical arguments then
 an error (pop the error first). See source exports for the other stack contracts.
-Rebuild scripts and DLL together; interface 2 replaces `BeforeInstall` with
-`PreflightInstall` and `PrepareApplication` and adds the fourth `Run` argument.
-`Tokenize` replaces the earlier policy-bearing `Options` export; rebuild consumer
-scripts and the DLL together when adopting this interface change.
+Build scripts and DLL together against interface 2.
 
-## Validate and extract
+## Validation
 
 From the toolkit directory:
 
@@ -369,11 +340,11 @@ python ci.py
 
 The runner also works from another directory: `python path/to/toolkit/ci.py`.
 It installs the required Rust components/targets through `rustup`, then stops at
-the first failed check and returns a nonzero exit code. To use an already prepared
+the first failed check and returns a nonzero exit code. To use a prepared
 toolchain without running those setup commands, use
 `python ci.py --skip-toolchain-setup`. NSIS, Python, Rust and the Visual Studio C++
-build tools must already be installed. Child Python checks use the same Python
-interpreter as the runner. No PowerShell knowledge or scripts are required.
+build tools must be installed. Child Python checks use the same Python
+interpreter as the runner.
 
 This checks formatting, unit tests, three Clippy feature configurations and
 desktop-consumer lifecycle and ownership security fixtures, both with default hooks
@@ -382,20 +353,81 @@ These cover unsafe paths/reparse points, malformed lists, executable renames,
 fallback removal, hook ordering and custom argument forwarding. The fixture compiles real NSIS
 sources with a private HKCU key, temp destination and compile-time `open` broker;
 it never elevates, runs a real app or touches Program Files.
-Interactive product previews and application-specific lifecycle tests belong in
-the consumer repository. Accessibility and real UAC acceptance need desktop testing.
+CI also compiles SVG, raster and maintenance previews without launching them.
+Application-specific lifecycle tests belong in the consumer repository.
+Accessibility and real UAC acceptance need desktop testing.
 
-To extract, copy this directory, excluding `ui/target` and Python caches, into the
-new repository root. Its `.github/workflows/ci.yml` then runs the same checks.
-Choose an explicit license and repository name before publication. No license
-grant or remote repository has been invented here. Tag the first reviewed
-interface release and have consumers pin that tag or commit. Preserve existing consumers' registry ownership values and updater compatibility
-when replacing a local toolkit directory with a pinned dependency.
+## Harmless UI previews
 
-Interactive uninstall asks for confirmation and permits cancellation before removal.
-Only `/S` skips that page. Both `UninstallString` and `QuietUninstallString`
-supply `/S` to avoid repeating the Windows uninstall confirmation. Direct launches
-without `/S` remain interactive. Automatic replacement explicitly uses `/S`.
+The reusable previews use Example App branding and the toolkit's own SVG.
+They require no consumer checkout, Node tooling or app assets. Build them with:
+
+```console
+python build_preview.py --renderer svg
+python build_preview.py --renderer raster
+python build_preview.py --maintenance
+```
+
+Outputs are under this directory's ignored `artifacts/`: `NativeNSIS-preview-svg.exe`,
+`NativeNSIS-preview-raster.exe` and `NativeNSIS-maintenance-preview.exe`.
+Raster mode uses the NSIS executable's icon; `--icon path/to/icon.ico` supplies an
+optional consumer icon. SVG mode accepts `--logo path/to/logo.svg`. All builds
+verify the unelevated manifest and never launch their output.
+
+These previews request no elevation, write no registration and never install,
+uninstall or launch an app. The selection fixture extracts only `preview/fixture.txt`
+into NSIS's private temporary plugin directory. Its editable destination and Browse
+control are for testing; the real installer uses a fixed, disabled destination.
+The maintenance fixture returns action exit codes only: Launch 10, Reinstall 11,
+Uninstall 12, Cancel 1. The selected app path is never modified, including with
+`/S` or `/D=`.
+
+Run the optional desktop suites serially on an interactive Windows desktop:
+
+```console
+python test_preview.py --renderer svg --theme dark
+python test_preview.py --renderer svg --theme light
+python test_preview.py --renderer raster --theme dark
+python test_maintenance.py
+```
+
+They cover rendering/fallback, layout, monitor DPI, editable path behavior,
+completion, maintenance actions and cancellation. Screenshots capture only the
+fixture window. `desktop_helpers.py` supplies shared Win32 helpers and a
+`DesktopLease` that rejects overlapping suites. Hover tests briefly move the
+pointer and restore it afterward; leave the desktop undisturbed during these runs.
+Tests requiring multiple physical monitor DPIs may skip on a single-DPI desktop.
+The hover repaint check has a known intermittent desktop timing failure; inspect
+that result separately from the headless lifecycle and ownership checks.
+These desktop tests are opt-in; CI compiles previews without opening their windows.
+
+`python benchmark_preview.py` optionally compares warm SVG/raster preview startup
+after both have been built. Raw SVG-render diagnostics are available through
+`ui/examples/svg_probe.rs`; neither tool is part of installer behavior.
+
+## Repository integration
+
+Consumers can pin the toolkit as a Git submodule:
+
+```console
+git submodule add https://github.com/moooozi/nsis-kit.git packaging/nsis/toolkit
+git submodule update --init --recursive
+```
+
+Commit the toolkit gitlink and `.gitmodules` together. Pin a reviewed commit or
+tag, and publish toolkit commits before publishing a consumer reference to them.
+CI checkouts must initialize submodules recursively. Keep application registration
+identity, ownership data and supported updater-client contracts consistent when
+updating the pinned toolkit. Build the configured consumer with `build.py` and
+validate its app hooks alongside the toolkit tests.
+
+## Uninstall behavior
+
+Direct uninstall uses NSIS's native confirmation/progress pages and closes on
+success. Cancellation is available before removal; `/S` skips confirmation.
+`UninstallString` and `QuietUninstallString` contain the quoted
+`$INSTDIR\uninstall.exe` path followed by `/S`, avoiding a second Windows confirmation. Direct launches
+without `/S` are interactive. Automatic replacement explicitly uses `/S`.
 
 ## Troubleshooting
 
@@ -406,4 +438,4 @@ without `/S` remain interactive. Automatic replacement explicitly uses `/S`.
 | Invalid or incomplete ownership list | Check typed registry values, installed `DisplayIcon`, and relative file names; a malformed supported manifest deliberately blocks replacement |
 | App files cannot be replaced or removed | Close running app instances; app hooks must stop services or other app components before replacement/removal |
 | Integration command fails | Check its exit code in the consumer hook, report `$Failure`, and rerun after correcting the cause; changes are not rolled back |
-| Previously installed app used a custom destination | Remove it with its original uninstaller before using this fixed-location toolkit |
+| Installed app uses a custom destination | Remove it with its original uninstaller before using this fixed-location toolkit |
