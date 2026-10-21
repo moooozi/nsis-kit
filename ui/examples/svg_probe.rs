@@ -24,9 +24,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let render_ms = start.elapsed().as_secs_f64() * 1000.0;
         let pixels = logo.pixels().expect("rendered bitmap");
         assert_eq!(pixels.len(), size as usize * size as usize * 4);
-        assert!(pixels.chunks_exact(4).any(|p| p[3] == 0));
-        assert!(pixels.chunks_exact(4).any(|p| p[3] > 0 && p[3] < 255));
-        assert!(pixels.chunks_exact(4).any(|p| p[3] == 255));
+        assert!(pixels.as_chunks::<4>().0.iter().any(|p| p[3] == 0));
+        assert!(
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|p| p[3] > 0 && p[3] < 255)
+        );
+        assert!(pixels.as_chunks::<4>().0.iter().any(|p| p[3] == 255));
         fs::write(output.join(format!("svg-{size}.bgra")), pixels)?;
         let pointer = pixels.as_ptr();
         let start = Instant::now();

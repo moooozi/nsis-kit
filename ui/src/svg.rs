@@ -257,7 +257,9 @@ mod tests {
             logo.render(64).unwrap();
             let pixels = logo.pixels().unwrap();
             let visible: Vec<_> = pixels
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .enumerate()
                 .filter(|(_, pixel)| pixel[3] > 0)
                 .map(|(index, _)| (index % 64, index / 64))
